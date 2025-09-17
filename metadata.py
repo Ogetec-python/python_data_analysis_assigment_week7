@@ -1,186 +1,178 @@
-# create_sample.py
-import pandas as pd
-import numpy as np
-import random
-from datetime import datetime, timedelta
-import json
+import sys
 
-def create_comprehensive_sample(input_path='data/metadata.csv', output_path='data/metadata_sample.csv', sample_size=10000):
+try:
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    from ucimlrepo import fetch_ucirepo
+except ImportError as ie:
+    print("Missing Package", ie)
+    print("Install required packages and try again, for example:")
+    print("pip install pandas matplotlib seaborn ucimlrepo")
+    sys.exit(1)
+
+sns.set()
+
+def fetch_dataset():
     """
-    Creates a comprehensive sample from the CORD-19 metadata that maintains
-    data distribution and includes diverse examples for analysis.
+    Idea: load the iris dataset from the UCI machine learning repo using Ucimlrepo.
+    Why: shows you how to use external dataset source. no need for manual CSV download
     """
-    print("🚀 Creating comprehensive sample file...")
-    
     try:
-        # Read the first 50,000 rows to get a good representation
-        print("📖 Reading original data...")
-        df_full = pd.read_csv(input_path, nrows=50000, low_memory=False)
-        print(f"📊 Original data shape: {df_full.shape}")
-        
-        # Create a stratified sample to maintain distribution
-        print("🎯 Creating stratified sample...")
-        
-        # Strategy 1: Sample by year if available
-        if 'publish_time' in df_full.columns:
-            try:
-                # Extract year from publish_time
-                df_full['temp_year'] = pd.to_datetime(df_full['publish_time'], errors='coerce').dt.year
-                # Sample proportionally by year
-                sample_df = df_full.groupby('temp_year', group_keys=False).apply(
-                    lambda x: x.sample(min(len(x), max(1, int(sample_size * len(x) / len(df_full)))))
-                ).sample(frac=1).head(sample_size)
-                df_full.drop('temp_year', axis=1, inplace=True)
-            except:
-                # Fallback: random sample
-                sample_df = df_full.sample(n=min(sample_size, len(df_full)), random_state=42)
-        else:
-            # Random sample if no date column
-            sample_df = df_full.sample(n=min(sample_size, len(df_full)), random_state=42)
-        
-        # Ensure we have diverse data coverage
-        print("🌈 Ensuring data diversity...")
-        
-        # Add some specific examples if they exist in the original data
-        covid_keywords = ['covid', 'sars-cov-2', 'coronavirus', 'pandemic']
-        for keyword in covid_keywords:
-            keyword_matches = df_full[df_full['title'].str.contains(keyword, case=False, na=False)]
-            if len(keyword_matches) > 0:
-                extra_samples = keyword_matches.sample(n=min(50, len(keyword_matches)), random_state=42)
-                sample_df = pd.concat([sample_df, extra_samples]).drop_duplicates().head(sample_size)
-        
-        # Ensure we have papers with abstracts
-        has_abstract = df_full[df_full['abstract'].notna() & (df_full['abstract'].str.len() > 100)]
-        if len(has_abstract) > 0:
-            abstract_samples = has_abstract.sample(n=min(1000, len(has_abstract)), random_state=42)
-            sample_df = pd.concat([sample_df, abstract_samples]).drop_duplicates().head(sample_size)
-        
-        # Remove temporary columns and clean up
-        if 'temp_year' in sample_df.columns:
-            sample_df.drop('temp_year', axis=1, inplace=True)
-        
-        # Final sample
-        sample_df = sample_df.head(sample_size)
-        
-        # Add some synthetic data to ensure all analysis features work
-        print("⚡ Enhancing sample with synthetic examples...")
-        enhanced_samples = []
-        
-        # Create some synthetic examples for better visualization
-        for i in range(100):
-            synthetic = {
-                'cord_uid': f'synth_{i:04d}',
-                'title': f'Synthetic COVID-19 Research Paper {i} on Treatment and Prevention',
-                'abstract': f'This is a synthetic abstract for testing purposes. It discusses COVID-19 treatment options and prevention strategies. This paper was generated for the sample dataset.',
-                'publish_time': f'202{random.randint(0,2)}-{random.randint(1,12):02d}-{random.randint(1,28):02d}',
-                'authors': f'Researcher {i}; Co-Author {i}; Team Member {i}',
-                'journal': random.choice(['Nature Medicine', 'Science', 'The Lancet', 'BMJ', 'JAMA']),
-                'url': f'https://example.com/synthetic/{i}',
-                'pdf_json_files': f'pdf{synthetic}.json',
-                'pmc_json_files': f'pmc{synthetic}.json',
-                'who_covidence_id': f'WHO_COV_{i:04d}'
-            }
-            enhanced_samples.append(synthetic)
-        
-        # Convert to DataFrame and concatenate
-        synthetic_df = pd.DataFrame(enhanced_samples)
-        final_sample = pd.concat([sample_df, synthetic_df], ignore_index=True)
-        
-        # Save the sample
-        final_sample.to_csv(output_path, index=False)
-        
-        print(f"✅ Sample created successfully!")
-        print(f"📁 File: {output_path}")
-        print(f"📊 Size: {len(final_sample)} rows, {len(final_sample.columns)} columns")
-        print(f"📅 Date range: {final_sample['publish_time'].min()} to {final_sample['publish_time'].max()}")
-        
-        # Show basic statistics
-        print("\n📈 Sample Statistics:")
-        print(f"   - Papers with abstracts: {final_sample['abstract'].notna().sum()}")
-        print(f"   - Unique journals: {final_sample['journal'].nunique()}")
-        print(f"   - Papers from 2020: {final_sample['publish_time'].str.contains('2020').sum()}")
-        
-        return final_sample
-        
-    except Exception as e:
-        print(f"❌ Error creating sample: {e}")
-        print("🔄 Creating synthetic sample instead...")
-        return create_synthetic_sample(output_path, sample_size)
+        iris = fetch_ucirepo(id=53)
 
-def create_synthetic_sample(output_path='data/metadata_sample.csv', sample_size=10000):
+    except Exception as e:
+        print("Error fetching dataset, check internet connection and unimlrepo installation.")
+        print("Full error:", e)
+        raise
+    return iris
+
+def build_dataframe(iris):
     """
-    Creates a completely synthetic sample if the original file can't be read.
+    Idea: load the Iris dataset from the UCI machine learning repo using UCIMLREPO.
+    We combine them into one DataFrame for easier analysis.
     """
-    print("🎨 Creating synthetic sample dataset...")
-    
-    # Generate realistic synthetic data
-    journals = ['Nature Medicine', 'Science', 'The Lancet', 'BMJ', 'JAMA', 'NEJM', 
-                'PLOS ONE', 'Cell', 'Nature', 'Science Translational Medicine']
-    
-    research_topics = [
-        'COVID-19 Treatment and Vaccine Development',
-        'SARS-CoV-2 Transmission Dynamics',
-        'Pandemic Response Strategies',
-        'Clinical Outcomes and Risk Factors',
-        'Public Health Interventions',
-        'Viral Genomics and Evolution',
-        'Healthcare System Preparedness',
-        'Social and Economic Impacts',
-        'Diagnostic Testing Methods',
-        'Therapeutic Interventions'
-    ]
-    
-    authors = [f'Researcher {i}' for i in range(1, 101)]
-    
-    data = []
-    for i in range(sample_size):
-        year = random.choice([2019, 2020, 2021, 2022])
-        month = random.randint(1, 12)
-        day = random.randint(1, 28)
-        
-        paper = {
-            'cord_uid': f'uid{i:06d}',
-            'title': f'{random.choice(research_topics)}: A Comprehensive Study',
-            'abstract': f'This study examines {random.choice(research_topics).lower()}. Our findings suggest important implications for public health and clinical practice. The research was conducted during the COVID-19 pandemic and provides valuable insights.',
-            'publish_time': f'{year}-{month:02d}-{day:02d}',
-            'authors': '; '.join(random.sample(authors, random.randint(1, 5))),
-            'journal': random.choice(journals),
-            'url': f'https://example.com/paper/{i}',
-            'pdf_json_files': f'pdf{i:06d}.json' if random.random() > 0.3 else np.nan,
-            'pmc_json_files': f'pmc{i:06d}.json' if random.random() > 0.5 else np.nan,
-            'who_covidence_id': f'WHO_COV_{i:06d}' if random.random() > 0.7 else np.nan
-        }
-        data.append(paper)
-    
-    df = pd.DataFrame(data)
-    df.to_csv(output_path, index=False)
-    
-    print(f"✅ Synthetic sample created with {len(df)} rows")
+    X = iris.data.features 
+    y = iris.data.targets
+
+    # Combine it Horizontally fess
+    df = pd.concat([X, y], axis=1)
+
+    # Standardize the species column name to 'species'
+    if 'class' in df.columns:
+        df = df.rename(columns={'class': 'species'})
+    elif 'target' in df.columns:
+        df = df.rename(columns={'target': 'species'})
+    elif 'species' not in df.columns:
+        try:
+            if isinstance(y, pd.DataFrame):
+                first_col = y.columns[0]
+                df = df.rename(columns={first_col: 'species'})
+            else:
+                df['species'] = y
+        except Exception:
+            df['species'] = y
+
     return df
 
-def verify_sample(file_path='data/metadata_sample.csv'):
+def explore_data(df):
+     """
+    Idea: Explore the structure of the dataset by checking the data types and any missing values.
     """
-    Verifies the sample file and provides statistics.
-    """
-    try:
-        df = pd.read_csv(file_path)
-        print(f"🔍 Sample Verification:")
-        print(f"   - Rows: {len(df):,}")
-        print(f"   - Columns: {len(df.columns)}")
-        print(f"   - Memory usage: {df.memory_usage(deep=True).sum() / (1024**2):.1f} MB")
-        print(f"   - Missing values in title: {df['title'].isna().sum()}")
-        print(f"   - Date range: {df['publish_time'].min()} to {df['publish_time'].max()}")
-        return True
-    except Exception as e:
-        print(f"❌ Verification failed: {e}")
-        return False
+     print("\n--- First 5 rows ---")
+     print(df.head(), "\n")
 
-if _name_ == "_main_":
-    # Create the sample
-    sample_df = create_comprehensive_sample()
-    
-    # Verify it
-    verify_sample()
-    
-    print("\n🎉 Sample file is ready for use!")
-    print("💡 Update your app.py to use: df_raw = load_data('data/metadata_sample.csv')")
+     print("--- Data Types and Non-null counts ---")
+     print(df.info(), "\n")
+
+     print("--- Missing Values per column ---")
+     print(df.isnull().sum(), "\n")
+
+     print("--- Basic Descriptive Statistic (numeric) ---")
+     print(df.describe(), "\n")
+
+
+def basic_analysis(df):
+     """
+    Idea: compute group-level statistics to find the pattern by species
+    """
+     print("--- Group Means by Species ---")
+     grouped = df.groupby('species').mean(numeric_only=True)
+     print(grouped, "\n")
+     return grouped
+
+def plot_Visualization(df):
+     """
+    Idea: To produce the four required charts; line, bar, histogram, scatter.
+    Each plot will appear as png.
+    """
+     
+     df = df.reset_index(drop=True)
+
+     # Line Chart beginssssssssssssssssssssssss
+     plt.figure(figsize=(10,5))
+     plt.plot(df.index, df["Sepal length (cm)"], label="Sepal length (cm)")
+     plt.title("Line: Sepal Length Across Samples")
+     plt.xlabel("Sample Index")
+     plt.ylabel("Sepal Length (cm)")
+     plt.legend()
+     plt.tight_layout()
+     plt.savefig("line_sepal_length.png")
+     plt.show()
+
+
+     # Bar Chart strts here
+     plt.figure(figsize=(8,5))
+     sns.barplot(x="species", y="Petal length (cm)", data=df, ci=None)
+     plt.title("Bar: Average Petal Length by Samples")
+     plt.xlabel("Species")
+     plt.ylabel("Petal Length (cm)")
+     plt.tight_layout()
+     plt.savefig("bar_petal_length_by_species.png")
+     plt.show()
+
+
+     # Histogram: begins here
+     plt.figure(figsize=(8,5))
+     plt.hist(df["Sepal width (cm)"], bins=15)
+     plt.title("Histogram: Sepal with description")
+     plt.xlabel("Sepal Width (cm)")
+     plt.ylabel("Frequency")
+     plt.tight_layout()
+     plt.savefig("hist_sepal_width.png")
+     plt.show()
+
+
+     # Scatter plot here
+     plt.figure(figsize=(8,6))
+     sns.scatterplot(x="sepal length (cm)", y="Petal length (cm)", hue="species", data=df)
+     plt.title("Scatter: Sepal Length vs petal length")
+     plt.xlabel("Sepal Length (cm)")
+     plt.ylabel("Petal Length (cm)")
+     plt.legend(tittle="Species")
+     plt.tight_layout()
+     plt.savefig("Scatter_sepal_vs_petal.png")
+     plt.show()
+
+     
+def error_handlings():
+    """
+    Try & Except Error
+    """
+
+    print("\n --- Error handling: reading a local CSV")
+    try:
+        temp = pd.read_csv("Some_files_that_doesn't exist.csv")
+    except FileNotFoundError:
+        print("FileNotFoundError caught: some CSV not found , this is expected though")
+        print("Remedy: place your csv filee in the same folder")
+    except Exception as e:
+        print("Other read error: ", e)
+
+
+def findings_and_notes(grouped):
+    """
+    Finding for submission
+    """
+    print("\n --- Findings / Observations")
+    print(" - Setos has clearly smaller petal lengths, on average, compared to Versciolor and virginica")
+
+    print("\n Notes")
+    print("- PNG files for each plot are saved in the script folder: line_sepal_length.png, bar_petal_length_by_species.png, hist_sepal_width.png and Scatter_sepal_vs_petal.png")
+    print("- If plots do not pop up on your device, open thoes PNG files manually")
+    print("- Make sure your device is compatible")
+
+
+def main():
+    iris = fetch_dataset()
+    df = build_dataframe(iris)
+    explore_data(df)
+    grouped = basic_analysis(df)
+    plot_Visualization(df)
+    error_handlings()
+    findings_and_notes(grouped)
+
+
+
+if __name__ == "__main__":
+    main()
